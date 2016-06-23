@@ -1,0 +1,9 @@
+rtesseract:
+  build: .
+  ports:
+    - "8080:80"
+  volumes:
+    - /tmp/pdf-cache:/tmp/pdf-cache
+  environment:
+    - UPLOADED_FILES_DIR=/tmp/pdf-cache
+
