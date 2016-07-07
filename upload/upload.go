@@ -22,7 +22,7 @@ import (
 	"github.com/nu7hatch/gouuid"
 )
 
-const NUMBER_PARALELL_ROUTINES = 7
+const NUMBER_PARALELL_ROUTINES = 4
 
 var throttle = make(chan int, NUMBER_PARALELL_ROUTINES)
 

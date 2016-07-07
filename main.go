@@ -11,7 +11,6 @@ import (
 var log = logrus.New()
 
 func init() {
-	log.Formatter = new(logrus.JSONFormatter)
 	log.Formatter = new(logrus.TextFormatter) // default
 	log.Level = logrus.DebugLevel
 }
