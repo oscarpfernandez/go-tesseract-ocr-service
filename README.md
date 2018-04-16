@@ -7,12 +7,17 @@ Just a proof-of-concept at this point. For future development it will be split i
 multi-tier application architecture for better escalability - again for instructional
 purposes.
 
-### How to build:
-
-Just run: 
+### How to build and run:
 
 ```
-docker-compose up --build
+docker build -t ocr-tesseract .
+```
+
+```
+docker run --privileged=true -d -t -i \
+    -p 8080:80 \
+    -e UPLOADED_FILES_DIR='/tmp/pdf-cache' \
+    -v /tmp/pdf-cache:/tmp/pdf-cache ocr-tesseract
 ```
 
 ### Main webviews
