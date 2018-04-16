@@ -2,7 +2,7 @@
 # Tesseract Hackathon Docker Image
 #
 
-FROM ubuntu:15.10
+FROM ubuntu:18.04
 
 MAINTAINER oscar.pl.fernandez@gmail.com
 
@@ -22,26 +22,20 @@ RUN apt-get update && apt-get install -y \
   libpango1.0-dev \
   icu-devtools \
   python \
-  python-imaging \
   python-tornado \
   wget \
   zlib1g-dev \
-  liblept4 \
-  libleptonica-dev \
   git \
   imagemagick \
   ghostscript \
   tesseract-ocr \
-  tesseract-ocr-dev \
+  libtesseract-dev \
   tesseract-ocr-eng \
   tesseract-ocr-fra \
   tesseract-ocr-deu \
-  tesseract-ocr-eng
+  tesseract-ocr-eng \
+  golang-go
 
-
-# Install Golang 1.6
-RUN wget https://storage.googleapis.com/golang/go1.6.2.linux-amd64.tar.gz \
-    && tar -C /usr/local -xzf go1.6.2.linux-amd64.tar.gz
 ENV PATH $PATH:/usr/local/go/bin
 
 # Set GOPATH
@@ -49,14 +43,10 @@ ENV GOPATH /go
 ENV PATH /go/bin:$PATH
 
 # Set Tesseract Training data location
-ENV TESSDATA_PREFIX /usr/share/tesseract-ocr
+ENV TESSDATA_PREFIX /usr/share/tesseract-ocr/4.00/
 
 # Copy code to image
 COPY . /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service
-
-# Generate static resources
-# RUN go get github.com/jteeuwen/go-bindata/...
-# RUN go get github.com/elazarl/go-bindata-assetfs/...
 
 RUN cd /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service/vendor/github.com/jteeuwen/go-bindata/ && go install ./...
 RUN cd /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service/vendor/github.com/elazarl/go-bindata-assetfs/ && go install ./...
