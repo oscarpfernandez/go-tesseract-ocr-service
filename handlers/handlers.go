@@ -47,9 +47,9 @@ func (h *Handlers) GuiUploadPDF(w http.ResponseWriter, req *http.Request) {
 				<h2>Hackathon Tesseract Web Service</h2>
 				<h4>PDF File Submission</h4>
 				</pre>	
-					<form action="/api/upload/pdf" method="post" enctype="multipart/form-data">
-						<input type="file" name="the_file" />
-						<input type="submit" value="Submit PDF" />
+				<form action="/api/upload/pdf" method="post" enctype="multipart/form-data">
+					<input type="file" name="the_file" />
+					<input type="submit" value="Submit PDF" />
 				</form>
 				<pre class="prettyprint">
 				<div id="result"></div>
@@ -70,9 +70,9 @@ func (h *Handlers) GuiUploadImage(w http.ResponseWriter, req *http.Request) {
 				<h2>Hackathon Tesseract Web Service</h2>
 				<h4>JPG Image File Submission</h4>
 				</pre>
-					<form action="/api/upload/img" method="post" enctype="multipart/form-data">
-						<input type="file" name="the_file" />
-						<input type="submit" value="Submit JPG" />
+				<form action="/api/upload/img" method="post" enctype="multipart/form-data">
+					<input type="file" name="the_file" />
+					<input type="submit" value="Submit JPG" />
 				</form>
 				<pre class="prettyprint">
 				<div id="result"></div>
@@ -82,7 +82,12 @@ func (h *Handlers) GuiUploadImage(w http.ResponseWriter, req *http.Request) {
 	_, _ = fmt.Fprintf(w, microPage)
 }
 
-func (h *Handlers) UploadImage(w http.ResponseWriter, req *http.Request) {
+func (h *Handlers) UploadImage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
 	log.Info("Request to handlers image service")
 
 	var (
@@ -90,7 +95,7 @@ func (h *Handlers) UploadImage(w http.ResponseWriter, req *http.Request) {
 		submission schema.SubmissionDetails
 	)
 
-	if !h.validateInput(w, req, &submission) {
+	if !h.validateInput(w, r, &submission) {
 		log.WithField("submissions", submission).Error("Invalid submission")
 		http.Error(w, "Unable to process request", http.StatusBadRequest)
 		return
@@ -100,7 +105,7 @@ func (h *Handlers) UploadImage(w http.ResponseWriter, req *http.Request) {
 	var numberOfPages int
 	var txtsOutputPath string
 
-	for _, fheaders := range req.MultipartForm.File {
+	for _, fheaders := range r.MultipartForm.File {
 		for _, hdr := range fheaders {
 			submission.FileName = hdr.Filename
 			// open uploaded
@@ -176,7 +181,12 @@ func (h *Handlers) UploadImage(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (h *Handlers) UploadPDF(w http.ResponseWriter, req *http.Request) {
+func (h *Handlers) UploadPDF(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
 	log.Info("Request to handlers pdf service")
 
 	var (
@@ -184,7 +194,7 @@ func (h *Handlers) UploadPDF(w http.ResponseWriter, req *http.Request) {
 		submission schema.SubmissionDetails
 	)
 
-	if !h.validateInput(w, req, &submission) {
+	if !h.validateInput(w, r, &submission) {
 		log.WithField("submissions", submission).Error("Invalid submission")
 		http.Error(w, "Unable to process request", http.StatusBadRequest)
 		return
@@ -194,7 +204,7 @@ func (h *Handlers) UploadPDF(w http.ResponseWriter, req *http.Request) {
 	var numberOfPages int
 	var txtsOutputPath string
 
-	for _, fheaders := range req.MultipartForm.File {
+	for _, fheaders := range r.MultipartForm.File {
 		for _, hdr := range fheaders {
 			submission.FileName = hdr.Filename
 			// open uploaded
@@ -279,7 +289,6 @@ func (h *Handlers) UploadPDF(w http.ResponseWriter, req *http.Request) {
 	if err := json.NewEncoder(w).Encode(submission); err != nil {
 		log.WithError(err).Error("Error marshalling submission JSON")
 	}
-
 }
 
 func (h *Handlers) processParalellOCR(imagesDirectoryPath string, imageExtension string, textOutPutDirectory string, wg *sync.WaitGroup) int {
@@ -332,7 +341,6 @@ func (h *Handlers) generatePageDetails(textsDirectory string) []schema.PageDetai
 	}
 
 	return pages
-
 }
 
 func (h *Handlers) validateInput(w http.ResponseWriter, req *http.Request, submission *schema.SubmissionDetails) bool {
@@ -353,5 +361,6 @@ func (h *Handlers) validateInput(w http.ResponseWriter, req *http.Request, submi
 		log.Error("File exceeds maximum size")
 		return false
 	}
+
 	return true
 }
