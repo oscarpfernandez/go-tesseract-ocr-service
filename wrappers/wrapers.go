@@ -9,8 +9,9 @@ import (
 	"strings"
 	"sync"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/oscarpfernandez/go-tesseract-ocr-service/schema"
+
+	log "github.com/Sirupsen/logrus"
 	"github.com/otiai10/gosseract"
 )
 
