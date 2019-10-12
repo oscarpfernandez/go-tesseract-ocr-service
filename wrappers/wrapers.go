@@ -2,20 +2,20 @@ package wrappers
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"os/exec"
-
+	"path/filepath"
+	"strings"
 	"sync"
 
-	"strings"
-
-	"github.com/oscarpfernandez/go-tesseract-ocr-service/schema"
 	log "github.com/Sirupsen/logrus"
+	"github.com/oscarpfernandez/go-tesseract-ocr-service/schema"
 	"github.com/otiai10/gosseract"
 )
 
 //ExtracPdfToImagesFromPDF extracts Images from the PDF file and output an image per page.
-func ExtracPdfToImagesFromPDF(pdfFullPath string, outputDirectory string) error {
+func ExtracPdfToImagesFromPDF(pdfFullPath, outputDirectory string) error {
 	log.WithFields(log.Fields{
 		"pdfFullPath":     pdfFullPath,
 		"outputDirectory": outputDirectory,
@@ -26,10 +26,9 @@ func ExtracPdfToImagesFromPDF(pdfFullPath string, outputDirectory string) error 
 		log.WithField("basePath", pdfFullPath).WithError(err).Error("Chdir dir failed")
 	}
 
-	cmdName := "gs"
 	cmdArgs := []string{"-dNOPAUSE", "-dBATCH", "-sDEVICE=jpeg", "-r300", "-sOutputFile=p%03d.jpg", pdfFullPath}
 
-	cmd := exec.Command(cmdName, cmdArgs...)
+	cmd := exec.Command("gs", cmdArgs...)
 	cmdReader, err := cmd.StdoutPipe()
 	if err != nil {
 		log.WithError(err).Error("Error creating StdoutPipe for Cmd")
@@ -59,7 +58,7 @@ func ExtracPdfToImagesFromPDF(pdfFullPath string, outputDirectory string) error 
 }
 
 //ExtractPlainTextFromImage given a images file, Tesseract OCR generates a plain text file with the detected text.
-func ExtractPlainTextFromImage(imageFullPath string, languages string, outputDirectory string, textFilePrefix string, wg *sync.WaitGroup, throttle chan int) {
+func ExtractPlainTextFromImage(imageFullPath, languages, outputDirectory, textFilePrefix string, wg *sync.WaitGroup, throttle chan int) {
 	defer wg.Done()
 
 	outText := gosseract.Must(gosseract.Params{
@@ -67,11 +66,9 @@ func ExtractPlainTextFromImage(imageFullPath string, languages string, outputDir
 		Languages: languages, //eng+heb
 	})
 
-	sanitizedTxt := strings.Replace(outText, "\n", " ", -1)
-
-	textFilePath := outputDirectory + "/" + textFilePrefix + "_" + schema.TEXT_FILE
+	textFilePath := filepath.Join(outputDirectory, fmt.Sprintf("%s_%s", textFilePrefix, schema.TextFileName))
 	outfile, err := os.Create(textFilePath)
-	if nil != err {
+	if err != nil {
 		log.WithError(err).Error("Error creating text file")
 		return
 	}
@@ -84,6 +81,7 @@ func ExtractPlainTextFromImage(imageFullPath string, languages string, outputDir
 		"textFilePath":    textFilePath,
 	}).Info("Processed OCR Tesseract Instance")
 
+	sanitizedTxt := strings.Replace(outText, "\n", " ", -1)
 	outfile.WriteString(sanitizedTxt)
 
 	<-throttle

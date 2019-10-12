@@ -1,267 +1,272 @@
 package upload
 
 import (
-	"net/http"
-	"sync"
-
 	"encoding/json"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"path"
-
-	"io/ioutil"
-
+	"path/filepath"
 	"strings"
+	"sync"
 
-	"fmt"
-
-	"github.com/oscarpfernandez/go-tesseract-ocr-service/schema"
-	"github.com/oscarpfernandez/go-tesseract-ocr-service/wrappers"
 	log "github.com/Sirupsen/logrus"
 	"github.com/nu7hatch/gouuid"
+	"github.com/oscarpfernandez/go-tesseract-ocr-service/schema"
+	"github.com/oscarpfernandez/go-tesseract-ocr-service/wrappers"
 )
 
 const NUMBER_PARALELL_ROUTINES = 4
 
 var throttle = make(chan int, NUMBER_PARALELL_ROUTINES)
 
-func GuiUploadPDF() http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
-		log.Info("Request to upload image service via GUI")
+func GuiUploadPDF(w http.ResponseWriter, req *http.Request) {
+	log.Info("Request to upload image service via GUI")
 
-		microPage := `
-		                <html>
-                                   <title>Hackathon Tesseract Web Service</title>
-                                   <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-				<body>
-				    <h2>Hackathon Tesseract Web Service</h2>
+	microPage := `
+		<html>
+			<title>Hackathon Tesseract Web Service</title>
+			<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+			<body>
+				<h2>Hackathon Tesseract Web Service</h2>
+				<h4>PDF File Submission</h4>
+				</pre>	
+					<form action="/api/upload/pdf" method="post" enctype="multipart/form-data">
+						<input type="file" name="the_file" />
+						<input type="submit" value="Submit PDF" />
+				</form>
+				<pre class="prettyprint">
+				<div id="result"></div>
+			</body>
+		</html>`
 
-				    <h4>PDF File Submission</h4>
-				    </pre>
-                                        <form action="/api/upload/pdf" method="post" enctype="multipart/form-data">
-                                                <input type="file" name="the_file" />
-                                                <input type="submit" value="Submit PDF" />
-                                        </form>
-                                     <pre class="prettyprint">
-				     <div id="result"></div>
-				</body>
-				</html>`
-
-		fmt.Fprintf(w, microPage)
-	}
-
+	_, _ = fmt.Fprintf(w, microPage)
 }
 
-func GuiUploadImage() http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
-		log.Info("Request to upload image service via GUI")
+func GuiUploadImage(w http.ResponseWriter, req *http.Request) {
+	log.Info("Request to upload image service via GUI")
 
-		microPage := `
-		                <html>
-                                   <title>Hackathon Tesseract Web Service</title>
-                                   <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-				<body>
-				    <h2>Hackathon Tesseract Web Service</h2>
+	microPage := `
+		<html>
+			<title>Hackathon Tesseract Web Service</title>
+			<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+			<body>
+				<h2>Hackathon Tesseract Web Service</h2>
+				<h4>JPG Image File Submission</h4>
+				</pre>
+					<form action="/api/upload/img" method="post" enctype="multipart/form-data">
+						<input type="file" name="the_file" />
+						<input type="submit" value="Submit JPG" />
+				</form>
+				<pre class="prettyprint">
+				<div id="result"></div>
+			</body>
+		</html>`
 
-				    <h4>JPG Image File Submission</h4>
-				    </pre>
-                                        <form action="/api/upload/img" method="post" enctype="multipart/form-data">
-                                                <input type="file" name="the_file" />
-                                                <input type="submit" value="Submit JPG" />
-                                        </form>
-                                     <pre class="prettyprint">
-				     <div id="result"></div>
-				</body>
-				</html>`
-
-		fmt.Fprintf(w, microPage)
-	}
-
+	_, _ = fmt.Fprintf(w, microPage)
 }
 
-func UploadImage() http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
-		log.Info("Request to upload image service")
+func UploadImage(w http.ResponseWriter, req *http.Request) {
+	log.Info("Request to upload image service")
 
-		w.Header().Set("Content-Type", "application/json")
-		var (
-			status     int
-			err        error
-			submission schema.SubmissionDetails
-		)
-		// Runs at the end for error handline - check util for errors?
-		defer func() {
-			if nil != err {
-				log.WithField("function", "uploadImage").WithError(err).Error("Error uploading image file")
-				http.Error(w, err.Error(), status)
+	var (
+		err        error
+		submission schema.SubmissionDetails
+	)
+
+	if !validateInput(w, req, &submission) {
+		log.WithField("submissions", submission).Error("Invalid submission")
+		http.Error(w, "Unable to process request", http.StatusBadRequest)
+		return
+	}
+
+	var tempPath string
+	var numberOfPages int
+	var txtsOutputPath string
+
+	for _, fheaders := range req.MultipartForm.File {
+		for _, hdr := range fheaders {
+			submission.FileName = hdr.Filename
+			// open uploaded
+			var infile multipart.File
+			if infile, err = hdr.Open(); err != nil {
+				log.WithField("imgFilename", hdr.Filename).WithError(err).Error("Error uploading image file")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
 			}
-		}()
+			// open destination
+			var outfile *os.File
 
-		if validateInput(w, req, &submission) == false {
-			return
-		}
-
-		var tempPath string
-		var numberOfPages int
-		var txtsOutputPath string
-
-		for _, fheaders := range req.MultipartForm.File {
-			for _, hdr := range fheaders {
-				submission.FileName = hdr.Filename
-				// open uploaded
-				var infile multipart.File
-				if infile, err = hdr.Open(); nil != err {
-					status = http.StatusInternalServerError
-					return
-				}
-				// open destination
-				var outfile *os.File
-
-				// Save the file into the docker container disk,
-				generatedUUID, err := uuid.NewV4()
-
-				submission.UUID = generatedUUID.String()
-
-				if err != nil {
-					status = http.StatusInternalServerError
-					log.WithError(err).Error("Error creating UUID")
-					return
-				}
-
-				tempPath = path.Join(os.Getenv("UPLOADED_FILES_DIR"), generatedUUID.String())
-				log.WithFields(log.Fields{
-					"tmpDir":   tempPath,
-					"fileName": hdr.Filename,
-				}).Info("Storing submitted Image")
-
-				os.MkdirAll(tempPath, os.ModePerm)
-
-				if outfile, err = os.Create(tempPath + "/" + schema.DOCUMENT_IMAGE); nil != err {
-					status = http.StatusInternalServerError
-					log.WithError(err).Error("Error creating temporary upload file")
-					return
-				}
-				defer outfile.Close()
-
-				// 32K buffer copy
-				if _, err = io.Copy(outfile, infile); nil != err {
-					status = http.StatusInternalServerError
-					return
-				}
-
-				var wg sync.WaitGroup
-				log.WithField("MaxConcurrency", NUMBER_PARALELL_ROUTINES).Info("Launching main Tesseract text extraction worker")
-				txtsOutputPath = path.Join(tempPath, schema.TEXT_FOLDER)
-				os.MkdirAll(txtsOutputPath, os.ModePerm)
-				numberOfPages = processParalellOCR(tempPath, "jpg", txtsOutputPath, &wg, throttle)
-
+			// Save the file into the docker container disk,
+			generatedUUID, err := uuid.NewV4()
+			if err != nil {
+				log.WithError(err).Error("Error creating UUID")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
 			}
-		}
-		submission.NumberOfPages = numberOfPages
-		submission.Pages = generatePageDetails(txtsOutputPath)
 
-		b, err := json.MarshalIndent(submission, "", "\t")
-		if err != nil {
-			log.WithError(err).Error("Error marshalling submission JSON")
+			submission.UUID = generatedUUID.String()
+
+			tempPath = path.Join(os.Getenv("UPLOADED_FILES_DIR"), generatedUUID.String())
+			log.WithFields(log.Fields{
+				"tmpDir":   tempPath,
+				"fileName": hdr.Filename,
+			}).Info("Storing submitted Image")
+
+			if err := os.MkdirAll(tempPath, os.ModePerm); err != nil {
+				log.WithError(err).WithFields(log.Fields{
+					"tempPath": tempPath,
+				}).Error("Unable to write temporary folder")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+
+			outfile, err = os.Create(filepath.Join(tempPath, schema.DocumentImageName))
+			if err != nil {
+				log.WithError(err).Error("Error creating temporary upload file")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+			defer outfile.Close()
+
+			// 32K buffer copy
+			if _, err = io.Copy(outfile, infile); err != nil {
+				log.WithError(err).Error("Error while copying file")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+
+			log.WithField("MaxConcurrency", NUMBER_PARALELL_ROUTINES).Info("Launching main Tesseract text extraction worker")
+			txtsOutputPath = path.Join(tempPath, schema.TextFolderName)
+			if err := os.MkdirAll(txtsOutputPath, os.ModePerm); err != nil {
+				log.WithError(err).WithFields(log.Fields{
+					"txtsOutputPath": txtsOutputPath,
+				}).Error("Unable to write text output folder")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+
+			var wg sync.WaitGroup
+			numberOfPages = processParalellOCR(tempPath, "jpg", txtsOutputPath, &wg, throttle)
 		}
-		w.Write(b)
+	}
+
+	submission.NumberOfPages = numberOfPages
+	submission.Pages = generatePageDetails(txtsOutputPath)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(submission); err != nil {
+		log.WithError(err).Error("Error marshalling submission JSON")
 	}
 }
 
-func UploadPDF() http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
-		log.Info("Request to upload pdf service")
+func UploadPDF(w http.ResponseWriter, req *http.Request) {
+	log.Info("Request to upload pdf service")
 
-		w.Header().Set("Content-Type", "application/json")
-		var (
-			status     int
-			err        error
-			submission schema.SubmissionDetails
-		)
-		// Runs at the end for error handline - check util for errors?
-		defer func() {
-			if nil != err {
-				log.WithField("function", "uploadPDF").WithError(err).Error("Error uploading pdf file")
-				http.Error(w, err.Error(), status)
-			}
-		}()
+	var (
+		err        error
+		submission schema.SubmissionDetails
+	)
 
-		if validateInput(w, req, &submission) == false {
-			return
-		}
-
-		var tempPath string
-		var numberOfPages int
-		var txtsOutputPath string
-
-		for _, fheaders := range req.MultipartForm.File {
-			for _, hdr := range fheaders {
-				submission.FileName = hdr.Filename
-				// open uploaded
-				var infile multipart.File
-				if infile, err = hdr.Open(); nil != err {
-					status = http.StatusInternalServerError
-					return
-				}
-				// open destination
-				var outfile *os.File
-
-				// Save the file into the docker container disk,
-				generatedUUID, err := uuid.NewV4()
-
-				submission.UUID = generatedUUID.String()
-
-				if err != nil {
-					status = http.StatusInternalServerError
-					log.WithError(err).Error("Error creating UUID")
-					return
-				}
-
-				tempPath = path.Join(os.Getenv("UPLOADED_FILES_DIR"), generatedUUID.String())
-				log.WithFields(log.Fields{
-					"tmpDir":   tempPath,
-					"fileName": hdr.Filename,
-				}).Info("Storing submitted PDF")
-
-				os.MkdirAll(tempPath, os.ModePerm)
-
-				if outfile, err = os.Create(tempPath + "/" + schema.DOCUMENT_FILE); nil != err {
-					status = http.StatusInternalServerError
-					log.WithError(err).Error("Error creating temporary upload file")
-					return
-				}
-				defer outfile.Close()
-
-				// 32K buffer copy
-				if _, err = io.Copy(outfile, infile); nil != err {
-					status = http.StatusInternalServerError
-					return
-				}
-
-				// Generates Images from the PDF
-				imagesOutputPath := path.Join(tempPath, schema.IMAGES_FOLDER)
-				os.MkdirAll(imagesOutputPath, os.ModePerm)
-				pdfFilePath := path.Join(tempPath, schema.DOCUMENT_FILE)
-				wrappers.ExtracPdfToImagesFromPDF(pdfFilePath, imagesOutputPath)
-
-				var wg sync.WaitGroup
-				log.WithField("MaxConcurrency", NUMBER_PARALELL_ROUTINES).Info("Launching main Tesseract text extraction worker")
-				txtsOutputPath = path.Join(tempPath, schema.TEXT_FOLDER)
-				os.MkdirAll(txtsOutputPath, os.ModePerm)
-				numberOfPages = processParalellOCR(imagesOutputPath, "jpg", txtsOutputPath, &wg, throttle)
-
-			}
-		}
-		submission.NumberOfPages = numberOfPages
-		submission.Pages = generatePageDetails(txtsOutputPath)
-
-		b, err := json.MarshalIndent(submission, "", "\t")
-		if err != nil {
-			log.WithError(err).Error("Error marshalling submission JSON")
-		}
-		w.Write(b)
+	if !validateInput(w, req, &submission) {
+		log.WithField("submissions", submission).Error("Invalid submission")
+		http.Error(w, "Unable to process request", http.StatusBadRequest)
+		return
 	}
+
+	var tempPath string
+	var numberOfPages int
+	var txtsOutputPath string
+
+	for _, fheaders := range req.MultipartForm.File {
+		for _, hdr := range fheaders {
+			submission.FileName = hdr.Filename
+			// open uploaded
+			var infile multipart.File
+			if infile, err = hdr.Open(); nil != err {
+				log.WithField("PDFFilename", hdr.Filename).WithError(err).Error("Error uploading PDF file")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+			// open destination
+			var outfile *os.File
+
+			// Save the file into the docker container disk,
+			// Save the file into the docker container disk,
+			generatedUUID, err := uuid.NewV4()
+			if err != nil {
+				log.WithError(err).Error("Error creating UUID")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+
+			submission.UUID = generatedUUID.String()
+
+			tempPath = path.Join(os.Getenv("UPLOADED_FILES_DIR"), generatedUUID.String())
+			log.WithFields(log.Fields{
+				"tmpDir":   tempPath,
+				"fileName": hdr.Filename,
+			}).Info("Storing submitted PDF")
+
+			if err := os.MkdirAll(tempPath, os.ModePerm); err != nil {
+				log.WithError(err).Error("Error creating temporary directory")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+
+			if outfile, err = os.Create(filepath.Join(tempPath, schema.DocumentFileName)); nil != err {
+				log.WithError(err).Error("Error creating temporary upload file")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+			defer outfile.Close()
+
+			// 32K buffer copy
+			if _, err = io.Copy(outfile, infile); nil != err {
+				log.WithError(err).Error("Error while copying file")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+
+			// Generates Images from the PDF
+			imagesOutputPath := path.Join(tempPath, schema.ImagesFolderName)
+			if err := os.MkdirAll(imagesOutputPath, os.ModePerm); err != nil {
+				log.WithError(err).Error("Error creating images output directory")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+
+			pdfFilePath := path.Join(tempPath, schema.DocumentFileName)
+			if err := wrappers.ExtracPdfToImagesFromPDF(pdfFilePath, imagesOutputPath); err != nil {
+				log.WithField("pdfFilePath", pdfFilePath).WithError(err).Error("Unable to extract images from PDF")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+
+			var wg sync.WaitGroup
+			log.WithField("MaxConcurrency", NUMBER_PARALELL_ROUTINES).Info("Launching main Tesseract text extraction worker")
+			txtsOutputPath = path.Join(tempPath, schema.TextFolderName)
+			if err := os.MkdirAll(txtsOutputPath, os.ModePerm); err != nil {
+				log.WithError(err).Error("Error creating texts output directory")
+				http.Error(w, "Unable to process request", http.StatusInternalServerError)
+				return
+			}
+
+			numberOfPages = processParalellOCR(imagesOutputPath, "jpg", txtsOutputPath, &wg, throttle)
+
+		}
+	}
+	submission.NumberOfPages = numberOfPages
+	submission.Pages = generatePageDetails(txtsOutputPath)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(submission); err != nil {
+		log.WithError(err).Error("Error marshalling submission JSON")
+	}
+
 }
 
 func processParalellOCR(imagesDirectoryPath string, imageExtension string, textOutPutDirectory string, wg *sync.WaitGroup, throttle chan int) int {
@@ -329,7 +334,7 @@ func validateInput(w http.ResponseWriter, req *http.Request, submission *schema.
 	}
 
 	var maxSizeBits int64
-	maxSizeBits = (1 << 20) * schema.MAXSIZEMB
+	maxSizeBits = (1 << 20) * schema.MaxSizeMB
 
 	if err := req.ParseMultipartForm(maxSizeBits); nil != err {
 		log.Error("File exceeds maximum size")
