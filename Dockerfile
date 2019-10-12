@@ -33,9 +33,9 @@ RUN apt-get update && apt-get install -y \
   tesseract-ocr-eng \
   tesseract-ocr-fra \
   tesseract-ocr-deu \
-  tesseract-ocr-eng \
-  golang-go
+  tesseract-ocr-eng
 
+RUN wget -qO- https://dl.google.com/go/go1.13.1.linux-amd64.tar.gz | tar xvz -C /usr/local
 ENV PATH $PATH:/usr/local/go/bin
 
 # Set GOPATH
@@ -50,9 +50,6 @@ COPY . /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service
 
 WORKDIR /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service
 
-RUN cd vendor/github.com/jteeuwen/go-bindata/ && go install ./...
-RUN cd vendor/github.com/elazarl/go-bindata-assetfs/ && go install ./...
-RUN cd cmd/ocr-service && go generate
 RUN go install -v -a github.com/oscarpfernandez/go-tesseract-ocr-service/cmd/ocr-service/...
 
 CMD /go/bin/ocr-service

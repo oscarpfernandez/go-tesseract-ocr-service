@@ -15,7 +15,6 @@ func init() {
 	log.Level = logrus.DebugLevel
 }
 
-//go:generate go-bindata-assetfs ../../view/...
 func main() {
 	logrus.Print("Tesseract Rest Service")
 
@@ -34,9 +33,6 @@ func main() {
 
 	// Assign the returned mux to the default http root handler
 	http.Handle("/", h)
-
-	// Setup a go-bindata-assetfs file server on the /view route
-	http.Handle("/view/", http.StripPrefix("/view/", http.FileServer(assetFS())))
 
 	// Start server
 	err := http.ListenAndServe(":80", nil)
