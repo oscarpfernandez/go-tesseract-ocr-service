@@ -43,20 +43,18 @@ ENV GOPATH /go
 ENV PATH /go/bin:$PATH
 
 # Set Tesseract Training data location
-ENV TESSDATA_PREFIX /usr/share/tesseract-ocr/4.00/
+ENV TESSDATA_PREFIX /usr/share/tesseract-ocr/4.00/tessdata
 
 # Copy code to image
 COPY . /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service
 
-RUN cd /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service/vendor/github.com/jteeuwen/go-bindata/ && go install ./...
-RUN cd /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service/vendor/github.com/elazarl/go-bindata-assetfs/ && go install ./...
+WORKDIR /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service
 
-RUN cd /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service && go generate
+RUN cd vendor/github.com/jteeuwen/go-bindata/ && go install ./...
+RUN cd vendor/github.com/elazarl/go-bindata-assetfs/ && go install ./...
+RUN cd cmd/ocr-service && go generate
+RUN go install -v -a github.com/oscarpfernandez/go-tesseract-ocr-service/cmd/ocr-service/...
 
-# compile api source
-RUN cd /go/src/github.com/oscarpfernandez/go-tesseract-ocr-service && go install ./...
-
-# set entry-point to start api when docker image is ran
-ENTRYPOINT /go/bin/go-tesseract-ocr-service
+CMD /go/bin/ocr-service
 
 EXPOSE 80
