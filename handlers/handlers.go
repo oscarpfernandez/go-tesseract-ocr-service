@@ -1,4 +1,4 @@
-package upload
+package handlers
 
 import (
 	"encoding/json"
@@ -13,18 +13,31 @@ import (
 	"strings"
 	"sync"
 
-	log "github.com/Sirupsen/logrus"
-	"github.com/nu7hatch/gouuid"
 	"github.com/oscarpfernandez/go-tesseract-ocr-service/schema"
 	"github.com/oscarpfernandez/go-tesseract-ocr-service/wrappers"
+
+	log "github.com/Sirupsen/logrus"
+	"github.com/nu7hatch/gouuid"
 )
 
-const NUMBER_PARALELL_ROUTINES = 4
+const (
+	NUMBER_PARALELL_ROUTINES = 4
+)
 
-var throttle = make(chan int, NUMBER_PARALELL_ROUTINES)
+type Handlers struct {
+	throttle  chan int
+	uploadDir string
+}
 
-func GuiUploadPDF(w http.ResponseWriter, req *http.Request) {
-	log.Info("Request to upload image service via GUI")
+func NewHandlers(uploadDir string) *Handlers {
+	return &Handlers{
+		throttle:  make(chan int, NUMBER_PARALELL_ROUTINES),
+		uploadDir: uploadDir,
+	}
+}
+
+func (h *Handlers) GuiUploadPDF(w http.ResponseWriter, req *http.Request) {
+	log.Info("Request to handlers image service via GUI")
 
 	microPage := `
 		<html>
@@ -46,8 +59,8 @@ func GuiUploadPDF(w http.ResponseWriter, req *http.Request) {
 	_, _ = fmt.Fprintf(w, microPage)
 }
 
-func GuiUploadImage(w http.ResponseWriter, req *http.Request) {
-	log.Info("Request to upload image service via GUI")
+func (h *Handlers) GuiUploadImage(w http.ResponseWriter, req *http.Request) {
+	log.Info("Request to handlers image service via GUI")
 
 	microPage := `
 		<html>
@@ -69,15 +82,15 @@ func GuiUploadImage(w http.ResponseWriter, req *http.Request) {
 	_, _ = fmt.Fprintf(w, microPage)
 }
 
-func UploadImage(w http.ResponseWriter, req *http.Request) {
-	log.Info("Request to upload image service")
+func (h *Handlers) UploadImage(w http.ResponseWriter, req *http.Request) {
+	log.Info("Request to handlers image service")
 
 	var (
 		err        error
 		submission schema.SubmissionDetails
 	)
 
-	if !validateInput(w, req, &submission) {
+	if !h.validateInput(w, req, &submission) {
 		log.WithField("submissions", submission).Error("Invalid submission")
 		http.Error(w, "Unable to process request", http.StatusBadRequest)
 		return
@@ -110,7 +123,7 @@ func UploadImage(w http.ResponseWriter, req *http.Request) {
 
 			submission.UUID = generatedUUID.String()
 
-			tempPath = path.Join(os.Getenv("UPLOADED_FILES_DIR"), generatedUUID.String())
+			tempPath = path.Join(h.uploadDir, generatedUUID.String())
 			log.WithFields(log.Fields{
 				"tmpDir":   tempPath,
 				"fileName": hdr.Filename,
@@ -126,7 +139,7 @@ func UploadImage(w http.ResponseWriter, req *http.Request) {
 
 			outfile, err = os.Create(filepath.Join(tempPath, schema.DocumentImageName))
 			if err != nil {
-				log.WithError(err).Error("Error creating temporary upload file")
+				log.WithError(err).Error("Error creating temporary handlers file")
 				http.Error(w, "Unable to process request", http.StatusInternalServerError)
 				return
 			}
@@ -150,12 +163,12 @@ func UploadImage(w http.ResponseWriter, req *http.Request) {
 			}
 
 			var wg sync.WaitGroup
-			numberOfPages = processParalellOCR(tempPath, "jpg", txtsOutputPath, &wg, throttle)
+			numberOfPages = h.processParalellOCR(tempPath, "jpg", txtsOutputPath, &wg)
 		}
 	}
 
 	submission.NumberOfPages = numberOfPages
-	submission.Pages = generatePageDetails(txtsOutputPath)
+	submission.Pages = h.generatePageDetails(txtsOutputPath)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(submission); err != nil {
@@ -163,15 +176,15 @@ func UploadImage(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func UploadPDF(w http.ResponseWriter, req *http.Request) {
-	log.Info("Request to upload pdf service")
+func (h *Handlers) UploadPDF(w http.ResponseWriter, req *http.Request) {
+	log.Info("Request to handlers pdf service")
 
 	var (
 		err        error
 		submission schema.SubmissionDetails
 	)
 
-	if !validateInput(w, req, &submission) {
+	if !h.validateInput(w, req, &submission) {
 		log.WithField("submissions", submission).Error("Invalid submission")
 		http.Error(w, "Unable to process request", http.StatusBadRequest)
 		return
@@ -205,7 +218,7 @@ func UploadPDF(w http.ResponseWriter, req *http.Request) {
 
 			submission.UUID = generatedUUID.String()
 
-			tempPath = path.Join(os.Getenv("UPLOADED_FILES_DIR"), generatedUUID.String())
+			tempPath = path.Join(h.uploadDir, generatedUUID.String())
 			log.WithFields(log.Fields{
 				"tmpDir":   tempPath,
 				"fileName": hdr.Filename,
@@ -218,7 +231,7 @@ func UploadPDF(w http.ResponseWriter, req *http.Request) {
 			}
 
 			if outfile, err = os.Create(filepath.Join(tempPath, schema.DocumentFileName)); nil != err {
-				log.WithError(err).Error("Error creating temporary upload file")
+				log.WithError(err).Error("Error creating temporary handlers file")
 				http.Error(w, "Unable to process request", http.StatusInternalServerError)
 				return
 			}
@@ -255,12 +268,12 @@ func UploadPDF(w http.ResponseWriter, req *http.Request) {
 				return
 			}
 
-			numberOfPages = processParalellOCR(imagesOutputPath, "jpg", txtsOutputPath, &wg, throttle)
+			numberOfPages = h.processParalellOCR(imagesOutputPath, "jpg", txtsOutputPath, &wg)
 
 		}
 	}
 	submission.NumberOfPages = numberOfPages
-	submission.Pages = generatePageDetails(txtsOutputPath)
+	submission.Pages = h.generatePageDetails(txtsOutputPath)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(submission); err != nil {
@@ -269,7 +282,7 @@ func UploadPDF(w http.ResponseWriter, req *http.Request) {
 
 }
 
-func processParalellOCR(imagesDirectoryPath string, imageExtension string, textOutPutDirectory string, wg *sync.WaitGroup, throttle chan int) int {
+func (h *Handlers) processParalellOCR(imagesDirectoryPath string, imageExtension string, textOutPutDirectory string, wg *sync.WaitGroup) int {
 	imageFilesList, _ := ioutil.ReadDir(imagesDirectoryPath)
 
 	numberFiles := 0
@@ -279,14 +292,14 @@ func processParalellOCR(imagesDirectoryPath string, imageExtension string, textO
 			continue
 		}
 		imagePath := path.Join(imagesDirectoryPath, f.Name())
-		throttle <- 1 // whatever number
+		h.throttle <- 1 // whatever number
 		wg.Add(1)
 		log.WithFields(log.Fields{
 			"imagesDirectoryPath": imagesDirectoryPath,
 			"imageExtension":      imageExtension,
 			"textOutPutDirectory": textOutPutDirectory,
 		})
-		go wrappers.ExtractPlainTextFromImage(imagePath, "eng", textOutPutDirectory, f.Name(), wg, throttle)
+		go wrappers.ExtractPlainTextFromImage(imagePath, "eng", textOutPutDirectory, f.Name(), wg, h.throttle)
 
 		numberFiles++
 	}
@@ -295,7 +308,7 @@ func processParalellOCR(imagesDirectoryPath string, imageExtension string, textO
 	return numberFiles
 }
 
-func generatePageDetails(textsDirectory string) []schema.PageDetails {
+func (h *Handlers) generatePageDetails(textsDirectory string) []schema.PageDetails {
 	txtsFilesList, _ := ioutil.ReadDir(textsDirectory)
 
 	pages := make([]schema.PageDetails, len(txtsFilesList))
@@ -322,7 +335,7 @@ func generatePageDetails(textsDirectory string) []schema.PageDetails {
 
 }
 
-func validateInput(w http.ResponseWriter, req *http.Request, submission *schema.SubmissionDetails) bool {
+func (h *Handlers) validateInput(w http.ResponseWriter, req *http.Request, submission *schema.SubmissionDetails) bool {
 	// Need to call ParseMultipartForm first so we can check if a file is contained
 	// parameter for max memory taken from https://golang.org/src/net/http/request.go
 	// Note that this is 32mb, and is probably why 40mb files are failing
