@@ -9,7 +9,7 @@ github.com/otiai10/gosseract/tesseract
 github.com/rs/cors
 # github.com/rs/xhandler v0.0.0-20151224012956-d9d9599b6aaf
 github.com/rs/xhandler
-# golang.org/x/net v0.0.0-20160531150152-c4c3ea71919d
+# golang.org/x/net v0.7.0
 golang.org/x/net/context
-# golang.org/x/sys v0.0.0-20191010194322-b09406accb47
+# golang.org/x/sys v0.5.0
 golang.org/x/sys/unix
