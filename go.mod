@@ -11,5 +11,5 @@ require (
 	github.com/rs/xhandler v0.0.0-20151224012956-d9d9599b6aaf // indirect
 	github.com/stretchr/testify v1.4.0 // indirect
 	golang.org/x/net v0.0.0-20160531150152-c4c3ea71919d // indirect
-	golang.org/x/sys v0.0.0-20191010194322-b09406accb47 // indirect
+	golang.org/x/sys v0.1.0 // indirect
 )
